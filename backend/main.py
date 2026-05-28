@@ -1,128 +1,172 @@
-from fastapi import FastAPI
+import os
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from supabase import create_client, Client
 from pydantic import BaseModel
+from typing import Optional
+from supabase import create_client, Client
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- SUPABASE SETUP ---
-# Notice the quotation marks around the URL and Key below!
-SUPABASE_URL = "https://leltomkmuyepeyxrooos.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxlbHRvbWttdXllcGV5eHJvb29zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk5NTI2MzYsImV4cCI6MjA5NTUyODYzNn0.7-3ysPy50Yr6QzHahOfcSVUv27ghmvgu8BzOJ76e4EA"
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
-# Initialize the database connection
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError("Supabase URL and Key must be set in .env file.")
+
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+class Post(BaseModel):
+    author: str
+    content: str
+    author_avatar: Optional[str] = None
+    image_url: Optional[str] = None 
 
-class NewPost(BaseModel):
+class Comment(BaseModel):
     author: str
     content: str
 
-# --- NEW: Catch Likes and Unlikes ---
-@app.post("/posts/{post_id}/like")
-def toggle_like(post_id: int, data: dict):
-    username = data.get("username")
-    if not username:
-        return {"error": "Username required"}
-
-    # 1. Check if this user has already liked this post
-    existing = supabase.table("likes") \
-        .select("*") \
-        .eq("post_id", post_id) \
-        .eq("liker_username", username) \
-        .execute()
-
-    if existing.data:
-        # User already liked it! This means they are clicking it again to UNLIKE.
-        supabase.table("likes") \
-            .delete() \
-            .eq("post_id", post_id) \
-            .eq("liker_username", username) \
-            .execute()
-        return {"status": "unliked"}
-    else:
-        # User hasn't liked it yet. Add a new row to the table!
-        supabase.table("likes") \
-            .insert({
-                "post_id": post_id,
-                "liker_username": username
-            }) \
-            .execute()
-        return {"status": "liked"}
+class ProfileUpdate(BaseModel):
+    bio: Optional[str] = None
+    email_notifs: Optional[bool] = None
+    is_private: Optional[bool] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    dob: Optional[str] = None
 
 @app.get("/posts")
-def get_posts():
-    # 1. The magical Supabase Join query!
-    # It fetches the post, PLUS the usernames of everyone who liked it, PLUS the comments
-    response = supabase.table("posts").select(
-        "*, likes(liker_username), comments(id)"
-    ).order("id", desc=True).execute() # desc=True puts the newest posts at the top!
-    
-    # 2. Format the data cleanly for Next.js
-    formatted_posts = []
-    for post in response.data:
-        # Extract just the usernames into a neat list: ["Jedi", "Akshaya"]
-        likers = [like["liker_username"] for like in post.get("likes", [])]
-        
-        # Count how many comments exist
-        comment_count = len(post.get("comments", []))
-        
-        formatted_posts.append({
-            "id": post["id"],
-            "author": post["author"],
-            "content": post["content"],
-            "initialLikes": likers,
-            "commentCount": comment_count
-        })
-        
-    return formatted_posts
-    
-@app.post("/posts")
-def create_post(post: NewPost):
-    response = supabase.table("posts").insert({
-        "author": post.author,
-        "content": post.content,
-        "likes": 0
-    }).execute()
-    return response.data
+async def get_posts():
+    try:
+        response = supabase.table("posts").select("*").order("created_at", desc=True).execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-# --- NEW: Comment System Endpoints ---
+# NEW: Fetch a single post by ID
+@app.get("/posts/{post_id}")
+async def get_single_post(post_id: int):
+    try:
+        response = supabase.table("posts").select("*").eq("id", post_id).execute()
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Post not found")
+        return response.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/posts")
+async def create_post(post: Post):
+    new_post = {
+        "author_username": post.author,
+        "author_avatar": post.author_avatar,
+        "content": post.content,
+        "image_url": post.image_url,
+        "likes": [],
+        "comment_count": 0
+    }
+    try:
+        response = supabase.table("posts").insert(new_post).execute()
+        return response.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/posts/{post_id}")
+async def delete_post(post_id: int, username: str):
+    try:
+        post_res = supabase.table("posts").select("author_username").eq("id", post_id).execute()
+        if not post_res.data:
+            raise HTTPException(status_code=404, detail="Post not found")
+        if post_res.data[0]["author_username"] != username:
+            raise HTTPException(status_code=403, detail="Unauthorized to delete this post")
+        response = supabase.table("posts").delete().eq("id", post_id).execute()
+        return {"status": "success", "message": "Post deleted"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/posts/{post_id}/like")
+async def like_post(post_id: int, data: dict):
+    username = data.get("username")
+    if not username:
+        raise HTTPException(status_code=400, detail="Username is required")
+    try:
+        post_response = supabase.table("posts").select("likes").eq("id", post_id).execute()
+        if not post_response.data:
+            raise HTTPException(status_code=404, detail="Post not found")
+        current_likes = post_response.data[0].get("likes") or []
+        
+        if username in current_likes:
+            current_likes.remove(username)
+        else:
+            current_likes.append(username)
+            
+        update_response = supabase.table("posts").update({"likes": current_likes}).eq("id", post_id).execute()
+        return update_response.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/posts/{post_id}/comments")
-def get_comments(post_id: int):
-    # Fetch all comments for this specific post, oldest first (like a standard chat)
-    response = supabase.table("comments") \
-        .select("*") \
-        .eq("post_id", post_id) \
-        .order("created_at", desc=False) \
-        .execute()
-    
-    return response.data
+async def get_comments(post_id: int):
+    try:
+        response = supabase.table("comments").select("*").eq("post_id", post_id).order("created_at", desc=False).execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/posts/{post_id}/comments")
-def add_comment(post_id: int, data: dict):
-    author = data.get("author")
-    content = data.get("content")
-    
-    if not author or not content:
-        return {"error": "Author and content required"}
-        
-    # Insert the new comment into Supabase
-    response = supabase.table("comments") \
-        .insert({
+async def add_comment(post_id: int, comment: Comment):
+    try:
+        new_comment = {
             "post_id": post_id,
-            "author_username": author,
-            "content": content
-        }) \
-        .execute()
+            "author_username": comment.author,
+            "content": comment.content
+        }
+        comment_response = supabase.table("comments").insert(new_comment).execute()
         
-    # Return the newly created comment so the frontend can display it instantly
-    return response.data[0]
+        post_response = supabase.table("posts").select("comment_count").eq("id", post_id).execute()
+        current_count = post_response.data[0].get("comment_count") or 0
+        supabase.table("posts").update({"comment_count": current_count + 1}).eq("id", post_id).execute()
+        
+        return comment_response.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/profiles/{username}")
+async def get_profile(username: str):
+    try:
+        response = supabase.table("profiles").select("*").eq("username", username).execute()
+        if not response.data:
+            return {"bio": "Just exploring the Shimaru network.", "email_notifs": True, "is_private": False}
+        return response.data[0]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/profiles/{username}")
+async def update_profile(username: str, profile_data: ProfileUpdate):
+    try:
+        data = {
+            "username": username,
+            "bio": profile_data.bio,
+            "email_notifs": profile_data.email_notifs,
+            "is_private": profile_data.is_private,
+            "first_name": profile_data.first_name,
+            "last_name": profile_data.last_name,
+            "dob": profile_data.dob
+        }
+        clean_data = {k: v for k, v in data.items() if v is not None}
+        response = supabase.table("profiles").upsert(clean_data).execute()
+        return {"status": "success", "data": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

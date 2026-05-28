@@ -1,8 +1,9 @@
 // frontend/lib/supabase.ts
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = "https://leltomkmuyepeyxrooos.supabase.co"
-const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxlbHRvbWttdXllcGV5eHJvb29zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk5NTI2MzYsImV4cCI6MjA5NTUyODYzNn0.7-3ysPy50Yr6QzHahOfcSVUv27ghmvgu8BzOJ76e4EA"
+// Use Next.js public env vars for the client-side anon key and url.
+// Ensure you set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your environment.
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-// Create a single supabase client for interacting with your database
-export const supabase = createClient(supabaseUrl, supabaseKey)
+export const supabase = createClient(supabaseUrl, supabaseKey);

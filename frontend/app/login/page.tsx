@@ -23,18 +23,37 @@ export default function PremiumLogin() {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
+    
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        if (signInError) throw signInError;
         router.push("/"); 
       } else {
-        const { error } = await supabase.auth.signUp({
+        // 1. Create the Auth Account
+        const { data: authData, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
           options: { data: { first_name: firstName, last_name: lastName, dob: dob } }
         });
-        if (error) throw error;
+        if (signUpError) throw signUpError;
+        
+        // 2. Derive the username and save the profile data to the database
+        const username = firstName || email.split('@')[0];
+        
+        await fetch(`http://127.0.0.1:8000/profiles/${username}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            first_name: firstName,
+            last_name: lastName,
+            dob: dob,
+            bio: "Just joined Shimaru! Excited to connect.",
+            email_notifs: true,
+            is_private: false
+          }),
+        });
+
         router.push("/"); 
       }
     } catch (err: any) {
@@ -51,15 +70,12 @@ export default function PremiumLogin() {
     });
   };
 
-  // EXTREME FROST: Inputs are highly translucent to let the card's blur bleed through
   const inputStyles = "w-full bg-white/30 backdrop-blur-md border border-white/40 rounded-lg text-sm text-gray-900 placeholder:text-gray-500 focus:bg-white/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500/50 transition-all shadow-sm";
-
   const springConfig = { type: "spring" as const, stiffness: 450, damping: 40 };
 
   return (
     <main className="min-h-screen flex items-center justify-center p-4 selection:bg-indigo-100 relative overflow-hidden bg-slate-50">
       
-      {/* Background Orbs */}
       <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-purple-400/50 rounded-full blur-[100px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-indigo-400/50 rounded-full blur-[100px] pointer-events-none" />
       <div className="absolute top-[20%] right-[10%] w-[300px] h-[300px] bg-pink-400/40 rounded-full blur-[100px] pointer-events-none" />
@@ -69,22 +85,11 @@ export default function PremiumLogin() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={springConfig}
-        // EXTREME FROST: bg-white/20 + backdrop-blur-3xl creates pure refraction
         className="w-full max-w-md rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.1)] border border-white/40 bg-white/20 backdrop-blur-3xl overflow-hidden relative z-10"
       >
         <div className="flex p-2 bg-white/10 border-b border-white/20 relative">
-          <button
-            onClick={() => setIsLogin(true)}
-            className={`flex-1 py-2 text-sm font-medium rounded-xl transition-colors duration-300 relative z-10 ${isLogin ? 'text-gray-900' : 'text-gray-600 hover:text-gray-900'}`}
-          >
-            Log In
-          </button>
-          <button
-            onClick={() => setIsLogin(false)}
-            className={`flex-1 py-2 text-sm font-medium rounded-xl transition-colors duration-300 relative z-10 ${!isLogin ? 'text-gray-900' : 'text-gray-600 hover:text-gray-900'}`}
-          >
-            Sign Up
-          </button>
+          <button onClick={() => setIsLogin(true)} className={`flex-1 py-2 text-sm font-medium rounded-xl transition-colors duration-300 relative z-10 ${isLogin ? 'text-gray-900' : 'text-gray-600 hover:text-gray-900'}`}>Log In</button>
+          <button onClick={() => setIsLogin(false)} className={`flex-1 py-2 text-sm font-medium rounded-xl transition-colors duration-300 relative z-10 ${!isLogin ? 'text-gray-900' : 'text-gray-600 hover:text-gray-900'}`}>Sign Up</button>
           
           <motion.div 
             animate={{ x: isLogin ? 0 : "100%" }}
@@ -95,26 +100,20 @@ export default function PremiumLogin() {
 
         <div className="p-8">
           <motion.div layout transition={springConfig} className="text-center mb-8">
-            <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
-              {isLogin ? "Welcome back" : "Create an account"}
-            </h1>
-            <p className="text-sm text-gray-600 mt-2">
-              {isLogin ? "Enter your credentials to access your feed." : "Join the inner circle today."}
-            </p>
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-900">{isLogin ? "Welcome back" : "Create an account"}</h1>
+            <p className="text-sm text-gray-600 mt-2">{isLogin ? "Enter your credentials to access your feed." : "Join the inner circle today."}</p>
           </motion.div>
+
+          {error && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-4 p-3 bg-red-100/80 border border-red-200 text-red-600 text-sm rounded-xl">
+              {error}
+            </motion.div>
+          )}
 
           <form onSubmit={handleEmailAuth} className="flex flex-col gap-4 relative">
             <AnimatePresence mode="popLayout" initial={false}>
               {!isLogin && (
-                <motion.div
-                  key="signup-fields"
-                  layout 
-                  initial={{ opacity: 0, scale: 0.95, filter: "blur(4px)" }}
-                  animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-                  exit={{ opacity: 0, scale: 0.95, filter: "blur(4px)" }}
-                  transition={springConfig}
-                  className="flex flex-col gap-4 w-full origin-top"
-                >
+                <motion.div key="signup-fields" layout initial={{ opacity: 0, scale: 0.95, filter: "blur(4px)" }} animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }} exit={{ opacity: 0, scale: 0.95, filter: "blur(4px)" }} transition={springConfig} className="flex flex-col gap-4 w-full origin-top">
                   <div className="flex gap-4">
                     <div className="flex flex-col gap-2 flex-1">
                       <label className="text-sm font-medium text-gray-700">First Name</label>
