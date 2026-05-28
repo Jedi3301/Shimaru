@@ -31,6 +31,9 @@ export default function Home() {
 
   const springConfig = { type: "spring" as const, stiffness: 450, damping: 40 };
 
+  // NEW: Dynamic fallback URL for local development vs cloud production
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
   // Handle clicking outside the dropdown menu
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -58,9 +61,9 @@ export default function Home() {
       const pic = session.user.user_metadata?.avatar_url || session.user.user_metadata?.picture || null;
       setAvatarUrl(pic);
 
-      // Fetch the full profile from FastAPI
+      // Fetch the full profile from FastAPI using the dynamic API base URL
       try {
-        const profileRes = await fetch(`http://127.0.0.1:8000/profiles/${name}`);
+        const profileRes = await fetch(`${apiBaseUrl}/profiles/${name}`);
         if (profileRes.ok) {
           const fetchedProfile = await profileRes.json();
           setProfileData(fetchedProfile);
@@ -70,13 +73,14 @@ export default function Home() {
       }
     };
     checkAuthAndFetchProfile();
-  }, [router]);
+  }, [router, apiBaseUrl]);
 
   // Fetch Feed Posts
   useEffect(() => {
     const fetchPosts = async () => {
       try {
-        const res = await fetch("http://127.0.0.1:8000/posts");
+        // Fetch posts using the dynamic API base URL
+        const res = await fetch(`${apiBaseUrl}/posts`);
         const data = await res.json();
         if (Array.isArray(data)) setPosts(data);
       } catch (err) {
@@ -87,7 +91,7 @@ export default function Home() {
       }
     };
     fetchPosts();
-  }, []);
+  }, [apiBaseUrl]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
