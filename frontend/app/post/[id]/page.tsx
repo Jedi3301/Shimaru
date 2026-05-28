@@ -17,6 +17,9 @@ export default function DedicatedPostPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
+  // NEW: Dynamic fallback URL for production vs local development
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
   // 1. Verify User
   useEffect(() => {
     const checkAuth = async () => {
@@ -35,7 +38,8 @@ export default function DedicatedPostPage() {
   useEffect(() => {
     const fetchSinglePost = async () => {
       try {
-        const res = await fetch(`http://127.0.0.1:8000/posts/${params.id}`);
+        // Updated to use the environment variable base url!
+        const res = await fetch(`${apiBaseUrl}/posts/${params.id}`);
         if (!res.ok) throw new Error("Post not found");
         
         const data = await res.json();
@@ -50,7 +54,7 @@ export default function DedicatedPostPage() {
     if (params.id) {
       fetchSinglePost();
     }
-  }, [params.id]);
+  }, [params.id, params.id, apiBaseUrl]);
 
   if (isLoading) {
     return (
