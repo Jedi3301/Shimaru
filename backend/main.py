@@ -10,16 +10,17 @@ load_dotenv()
 
 app = FastAPI()
 
+# Ensure this block is added BEFORE any of your API routers
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "https://your-app-name.vercel.app"  # <-- Paste your live Vercel URL here!
+        "https://your-actual-app.vercel.app"  # <-- Paste your exact Origin string here
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allows POST, GET, OPTIONS, etc.
+    allow_headers=["*"],  # Allows Content-Type, Authorization, etc.
 )
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
