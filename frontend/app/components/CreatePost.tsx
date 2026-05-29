@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 import { Camera, Loader2, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "../lib/supabase"; 
-import imageCompression from 'browser-image-compression'; // NEW: Import the library
+import imageCompression from 'browser-image-compression'; 
 
 export default function CreatePost({ currentUser, avatarUrl, onPostCreated }: any) {
   const [isComposing, setIsComposing] = useState(false);
@@ -32,6 +32,7 @@ export default function CreatePost({ currentUser, avatarUrl, onPostCreated }: an
   };
 
   const handleSubmit = async () => {
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
     if (!currentUser || (!content.trim() && !selectedImage)) return;
     setIsPosting(true);
 
@@ -39,27 +40,23 @@ export default function CreatePost({ currentUser, avatarUrl, onPostCreated }: an
 
     try {
       if (selectedImage) {
-        
-        // --- NEW: COMPRESSION LOGIC ---
-        // We configure it to shrink to max 1MB and scale down to 1920px max width/height
+        // Configure image compression parameters
         const compressionOptions = {
           maxSizeMB: 1,
           maxWidthOrHeight: 1920,
           useWebWorker: true,
         };
         
-        // Compress the file before sending it anywhere
+        // Compress the file before sending it to Supabase storage
         const compressedFile = await imageCompression(selectedImage, compressionOptions);
-        // ------------------------------
 
-        // Notice we now use 'compressedFile' instead of 'selectedImage'
         const fileExt = compressedFile.name.split('.').pop() || 'jpg'; 
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
         const filePath = `${currentUser}/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
           .from('posts')
-          .upload(filePath, compressedFile); // Uploading the tiny file!
+          .upload(filePath, compressedFile);
 
         if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
 
@@ -70,8 +67,8 @@ export default function CreatePost({ currentUser, avatarUrl, onPostCreated }: an
         finalImageUrl = publicUrl;
       }
 
-      // Send to FastAPI
-      const response = await fetch("http://127.0.0.1:8000/posts", {
+      // FIXED: Now utilizing the dynamic environment variable instead of the hardcoded localhost string
+      const response = await fetch(`${apiBaseUrl}/posts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
@@ -156,7 +153,6 @@ export default function CreatePost({ currentUser, avatarUrl, onPostCreated }: an
             )}
 
             <div className="flex items-center justify-between">
-              
               <div>
                 <input 
                   type="file" 
